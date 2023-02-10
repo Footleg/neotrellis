@@ -21,6 +21,20 @@ from btn_demo import BtnDemo
 from rain_demo import RainDemo
 from trellisbattleships import Battleships
 
+### Mock Circuit Python audio classes
+class WaveFile:
+    def __init__(self, wave_file):
+        self.wav = wave_file
+
+    def getSound(self):
+        return self.wav
+
+# Override file open command for simulator so that we return a pygame sound rather than the 
+# IO buffer that the Python open() method normally returns (which the Circuit Python audio code player uses).
+def open(filepath,readmode):
+    return pygame.mixer.Sound(filepath) 
+
+
 if platform.system() == 'Windows':
     os.environ['SDL_VIDEODRIVER'] = 'windib'
 
@@ -47,11 +61,42 @@ class MultiTrellis:
         # Draw button rectangle
         pygame.draw.rect(self.screen,colour,(BTN_MARGIN + x * (BTN_MARGIN + BTN_SIZE),BTN_MARGIN + y * (BTN_MARGIN + BTN_SIZE),BTN_SIZE,BTN_SIZE))
 
-# Audio player class which mimics the interface of the audiocore class from Circuit Python
-# Allows code to play sounds in Circuit Python to play the sounds in Pygame in the simulator
-class AudioPlayer:
-    def play(self,sound):
-        sound.getSound().play()
+"""
+Host class: Holds references to all the trellis hardware capabilities and a dictionary of sound samples.
+All applications running on the matrix are passed a reference to the host object and access the LEDs
+through the host for getting and setting colours, and to play sounds. This architecture simplifies the
+application code and also enables a digital twin to run the same application classes in a software 
+simulation of the hardware.
+"""
+class Host:
+    def __init__(self,getColour,setColour):
+        self.getColour = getColour
+        self.setColour = setColour
+
+        print("Loading sound files into memory")
+        self.sounds_dict = {}
+
+        # Load sound files into sounds dictionary
+        self.sounds_dict['glass_break'] = WaveFile(open("./sounds/GlassBreak.wav", "rb"))
+        # Load sound files with text keys to identify them here (just a few CC licensed sound files are included in source as examples)
+        # self.sounds_dict['sound_key'] = WaveFile(open("./sounds/soundfile.wav", "rb"))
+
+
+    def getColour(self):
+        return self.getColour
+
+    def setColour(self):
+        return self.setColour
+
+    def restoreColour(self,x,y):
+        self.setColour(x,y,self.getColour(x,y),False)
+
+    def play(self,key):
+        try:
+            self.sounds_dict[key].getSound().play()
+        except(KeyError):
+            print(f"No sound matching key: {key}")
+
 
 # Track long single button presses to use to over-ride game classes
 lastBtnPressed = [-1,-1]
@@ -61,8 +106,6 @@ longPressInterval = 1000000000
 ## Main simulator method
 def main():
     global activeGame
-    
-    audio = AudioPlayer()
 
     pygame.init()
     screen = pygame.display.set_mode(SCR_SIZE)    
@@ -117,12 +160,13 @@ def main():
             if store:
                 leds[y * DIM_Y + x] = colour
             trellis.color(x, y, colour)
-            #pygame.display.update()
-            #print(f"At {x},{y}: {colour}")
+            pygame.display.update()
+            time.sleep(0.001)
         else:
             print(f"Request to set colour outside trellis at: {x},{y}")
 
     def getColour(x,y):
+        time.sleep(0.01)
         return leds[y * DIM_Y + x]
 
     def gridReset(colour):
@@ -140,13 +184,19 @@ def main():
         if y == 11:
             if x == 0:
                 gridReset((50,0,50))
-                activeGame = BtnDemo(getColour, setColour, audio)
+                activeGame = BtnDemo(host)
             elif x == 1:
                 # gridReset((10,10,10))
-                activeGame = Battleships(getColour, setColour)
+                activeGame = Battleships(host)
             elif x == 11:
                 gridReset((0,0,0))
-                activeGame = RainDemo(getColour, setColour)
+                activeGame = RainDemo(host)
+        else:
+            # Pass unhandled long press events to active game
+            activeGame.longPressEvent(x,y)
+
+        # Restore button colour
+        host.restoreColour(x,y)
 
     # this will be called when button events are received
     def btnHandler(x, y, edge):
@@ -173,8 +223,11 @@ def main():
         
         # Reset last press time on any button event
         lastPressTime = time.monotonic_ns()
-                      
-    activeGame = Battleships(getColour, setColour)
+
+    host = Host(getColour,setColour)
+    
+    # Set the game to load automatically on boot
+    activeGame = Battleships(host)
 
     ## Simulation loop ##
     while running:

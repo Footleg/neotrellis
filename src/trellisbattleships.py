@@ -1,3 +1,20 @@
+# Ship find and destroy game demo for the Neotrellis Matrix
+
+# Copyright (C) 2023 Paul 'Footleg' Fretwell
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 import random
 import time
 
@@ -17,8 +34,9 @@ MISS = BLUE
 HIT = RED
 NOTTRIED = DIMWHITE
 
-TURNTIME = 1000000000
-ANIMATEINTERVAL = 500000000
+TURNTIME = 2200000000
+ANIMATEINTERVAL = 330000000
+MAXSHOTS = 44
 
 """
 No. Class of ship Size
@@ -30,39 +48,49 @@ No. Class of ship Size
 """
 
 class Battleships:
-    def __init__(self, getColour, setColour):
-        self.getColour = getColour
-        self.setColour = setColour
+    def __init__(self, host):
+        # Host contains all the RGB LED access and audio play methods of the hardware
+        self.host = host
 
+        self.enableBtns = False
+        self.audioVolume = 1
+        self.flipflop = False
+        self.maxTries = MAXSHOTS
+        
+        self.startGame()
+
+
+    def startGame(self):
+        self.enableBtns = False
+
+        # Initialise game variables
+        self.btnDown = False
+        self.activeBtn = (-1,-1)
+        self.turnStarted = 0 #0 indication no turn active, otherwise the time the turn started is stored
+        self.gamestage = 0 # 0=waiting for player to take shot; 1=shot fired; 2=ship hit; 3=ship sinking, 4=game over
+        self.misses = 0
+        self.remainingships = 5
+
+        # Create ships
         self.carrier = [[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
         self.battleship = [[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
         self.cruiser = [[0,0,0],[0,0,0],[0,0,0]]
         self.submarine = [[0,0,0],[0,0,0],[0,0,0]]
         self.destroyer = [[0,0,0],[0,0,0]]
 
-        self.enableBtns = False
-        self.btnDown = False
-        self.activeBtn = (-1,-1)
-        self.turnStarted = 0 #0 indication no turn active, otherwise the time the turn started is stored
-        self.gamestage = 0 # 0=waiting for player to take shot; 1=shot fired; 2=ship hit; 3=ship sinking
-        
-        self.startGame()
-        self.enableBtns = True
-
-
-    def startGame(self):
-        self.enableBtns = False
         # Draw border
         for x in range(12):
-            self.setColour( x, 0, GREEN )
-            self.setColour( x, 11, GREEN )
+            self.host.setColour( x, 0, GREEN )
+            self.host.setColour( x, 11, GREEN )
         for y in range(12):
-            self.setColour( 0, y, GREEN )
-            self.setColour( 11, y, GREEN )
+            self.host.setColour( 0, y, GREEN )
+            self.host.setColour( 11, y, GREEN )
+
         # Draw playing area
         for y in range(1,11):
             for x in range(1,11):
-                self.setColour( x, y, NOTTRIED )
+                self.host.setColour( x, y, NOTTRIED )
+
         # Place ships
         self.placeShip(self.carrier)
         self.placeShip(self.battleship)
@@ -70,11 +98,8 @@ class Battleships:
         self.placeShip(self.submarine)
         self.placeShip(self.destroyer)
 
-        # Reset Score Tracking
-        self.misses = 0
-        self.remainingships = 5
-
-        #self.showShips()
+        # Allow player to start taking shots
+        self.enableBtns = True
 
 
     def btnEvent(self, x, y, press):
@@ -83,19 +108,47 @@ class Battleships:
                 # Only allow one button to be down at a time
                 if self.btnDown == False:
                     # Check if a valid button selection for the game
-                    if 0 < x < 11 and 0 < y < 11 and self.getColour(x,y) == NOTTRIED:
+                    if 0 < x < 11 and 0 < y < 11 and self.host.getColour(x,y) == NOTTRIED:
                         self.btnDown = True
                         self.activeBtn = (x,y)
-                        self.setColour(x,y,WHITE,False)
+                        self.host.setColour(x,y,WHITE,False)
             else:
                 # Only act on release of the active button
                 if x == self.activeBtn[0] and y == self.activeBtn[1]:
                     self.enableBtns = False
                     self.btnDown = False
-                    self.turnStarted = time.monotonic_ns()
-                    self.animatetime = self.turnStarted - ANIMATEINTERVAL # Set to time out immediately
-                    self.gamestage = 1
+                    # Take turn if at turn taking game stage
+                    if self.gamestage == 0:
+                        self.turnStarted = time.monotonic_ns()
+                        self.animatetime = self.turnStarted - ANIMATEINTERVAL # Set to time out immediately
+                        self.gamestage = 1
+                        if self.audioVolume == 1:
+                            self.host.play('QuickBombDrop_1')
+                        elif self.audioVolume == 2:
+                            self.host.play('QuickBombDrop_2')
+                        elif self.audioVolume == 3:
+                            self.host.play('QuickBombDrop_3')
+                        elif self.audioVolume == 4:
+                            self.host.play('QuickBombDrop_4')
                     
+
+    def longPressEvent(self, x, y):
+        if y == 0:
+            if x < 5:
+                self.audioVolume = x
+                print(f"Audio Volume: {self.audioVolume}")
+        elif y == 1:
+            if x < 4 and self.misses == 0:
+                # Reset game difficulty if at start of game
+                self.maxTries = 11 + x * 11
+                for idx in range(self.maxTries):
+                    self.misses = idx + 1
+                    self.updateScore(RED)
+                    time.sleep(0.05)
+                time.sleep(0.5)
+                # Trigger end of game to restart
+                self.endGame()
+
 
     def animate(self):
         # Increment animations which run independent of button presses
@@ -112,26 +165,95 @@ class Battleships:
                     # Shot missed
                     self.misses += 1
                     self.updateScore()
-                    self.setColour(self.activeBtn[0],self.activeBtn[1],BLUE)
-                    self.endTurn()
+                    self.host.setColour(self.activeBtn[0],self.activeBtn[1],BLUE)
+                    if self.audioVolume == 1:
+                        self.host.play('WaterSplash_1')
+                    elif self.audioVolume == 2:
+                        self.host.play('WaterSplash_2')
+                    elif self.audioVolume == 3:
+                        self.host.play('WaterSplash_3')
+                    elif self.audioVolume == 4:
+                        self.host.play('WaterSplash_4')
+                    if self.misses >= self.maxTries:
+                        # Game over, out of ammo
+                        self.endGame()
+                    else:
+                        self.endTurn()
                 else:
                     self.gamestage = outcome + 1
+                    if self.gamestage == 3:
+                        # Play ship sunk sound (animate loop will show sinking with LEDs)
+                        if self.audioVolume == 1:
+                            self.host.play('EpicExplosion_1')
+                        elif self.audioVolume == 2:
+                            self.host.play('EpicExplosion_2')
+                        elif self.audioVolume == 3:
+                            self.host.play('EpicExplosion_3')
+                        elif self.audioVolume == 4:
+                            self.host.play('EpicExplosion_4')
+                        # Reset timers for animation of ship sinking
+                        self.turnStarted = time.monotonic_ns()
+                        self.animatetime = self.turnStarted - ANIMATEINTERVAL # Set to time out immediately
             elif timenow - self.animatetime > ANIMATEINTERVAL:
                 print("turn animating")
                 self.animatetime = time.monotonic_ns()
                 # Flash button
-                if self.getColour(self.activeBtn[0],self.activeBtn[1]) != YELLOW:
-                    self.setColour(self.activeBtn[0],self.activeBtn[1],YELLOW)
+                if self.host.getColour(self.activeBtn[0],self.activeBtn[1]) != YELLOW:
+                    self.host.setColour(self.activeBtn[0],self.activeBtn[1],YELLOW)
                 else:
-                    self.setColour(self.activeBtn[0],self.activeBtn[1],NOTTRIED)
+                    self.host.setColour(self.activeBtn[0],self.activeBtn[1],NOTTRIED)
         elif self.gamestage == 2:
             # Ship hit
-            self.setColour(self.activeBtn[0],self.activeBtn[1],ORANGE)
+            self.host.setColour(self.activeBtn[0],self.activeBtn[1],ORANGE)
+            if self.audioVolume == 1:
+                self.host.play('SeaMineExplosion_1')
+            elif self.audioVolume == 2:
+                self.host.play('SeaMineExplosion_2')
+            elif self.audioVolume == 3:
+                self.host.play('SeaMineExplosion_3')
+            elif self.audioVolume == 4:
+                self.host.play('SeaMineExplosion_4')
             self.endTurn()
         elif self.gamestage == 3:
-            # Ship sunk
-            self.setColour(self.activeBtn[0],self.activeBtn[1],RED)
-            self.endTurn()
+            # Animate ship sinking
+            timenow = time.monotonic_ns()
+            if timenow - self.turnStarted > TURNTIME * 1.5:
+                # Ship sunk
+                self.drawShip(self.activeShip,YELLOW,RED)
+                self.remainingships += -1
+                if self.remainingships > 0:
+                    self.endTurn()
+                else:
+                    # Game won
+                    self.endGame()
+            elif timenow - self.animatetime > ANIMATEINTERVAL:
+                print("sinking animation")
+                for pos in self.activeShip:
+                    rnd = random.randint(0,2)
+                    if rnd == 0:
+                        self.host.setColour(pos[0],pos[1],YELLOW)
+                    elif rnd == 1:
+                        self.host.setColour(pos[0],pos[1],ORANGE)
+                    elif rnd == 2:
+                        self.host.setColour(pos[0],pos[1],RED)
+                self.animatetime = time.monotonic_ns()
+        elif self.gamestage == 4:
+            # Animate ships to show remaining
+            timenow = time.monotonic_ns()
+            if timenow - self.turnStarted > TURNTIME * 2:
+                self.startGame()
+            elif timenow - self.animatetime > ANIMATEINTERVAL:
+                print("Game over animation")
+                self.flipflop = not self.flipflop
+                if self.flipflop:
+                    self.drawShip(self.carrier, DIMWHITE, YELLOW)
+                    self.drawShip(self.battleship, DIMWHITE, CYAN)
+                    self.drawShip(self.cruiser, DIMWHITE, GREEN)
+                    self.drawShip(self.submarine, DIMWHITE, MAGENTA)
+                    self.drawShip(self.destroyer, DIMWHITE, ORANGE)
+                else:
+                    self.showShips()
+                self.animatetime = time.monotonic_ns()
 
 
     def endTurn(self):
@@ -140,15 +262,22 @@ class Battleships:
         self.enableBtns = True
 
 
-    def updateScore(self):
+    def endGame(self):
+        self.gamestage = 4
+        # Reset timers for animation of game ended
+        self.turnStarted = time.monotonic_ns()
+        self.animatetime = self.turnStarted - ANIMATEINTERVAL # Set to time out immediately
+
+
+    def updateScore(self,colour=YELLOW):
         if self.misses < 12:
-            self.setColour(self.misses-1, 0, YELLOW)
+            self.host.setColour(self.misses-1, 0, colour)
         elif self.misses < 23:
-            self.setColour(11, self.misses-12, YELLOW)
+            self.host.setColour(11, self.misses-12, colour)
         elif self.misses < 34:
-            self.setColour(34-self.misses, 11, YELLOW)
+            self.host.setColour(34-self.misses, 11, colour)
         elif self.misses < 45:
-            self.setColour(0, 45-self.misses, YELLOW)
+            self.host.setColour(0, 45-self.misses, colour)
 
 
     def checkPositionAgainstShip(self,ship,x,y):
@@ -238,13 +367,13 @@ class Battleships:
             else:
                 colour = hitColour
             print(f"Drawing in {colour} at {x},{y}")
-            self.setColour( x, y, colour )
+            self.host.setColour( x, y, colour )
                 
 
     def showShips(self):
         self.drawShip(self.carrier, YELLOW, RED)
         self.drawShip(self.battleship, CYAN, RED)
-        self.drawShip(self.cruiser, PURPLE, RED)
+        self.drawShip(self.cruiser, GREEN, RED)
         self.drawShip(self.submarine, MAGENTA, RED)
         self.drawShip(self.destroyer, ORANGE, RED)
                 

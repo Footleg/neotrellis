@@ -20,6 +20,7 @@ import board
 import busio
 import microcontroller
 import audiobusio
+from audiocore import WaveFile
 from adafruit_neotrellis.neotrellis import NeoTrellis
 from adafruit_neotrellis.multitrellis import MultiTrellis
 from digitalio import DigitalInOut, Direction, Pull
@@ -47,6 +48,43 @@ dimY = 12
 dimX = 12
 
 trellis = MultiTrellis(trelli)
+
+"""
+Host class: Holds references to all the trellis hardware capabilities and a dictionary of sound samples.
+All applications running on the matrix are passed a reference to the host object and access the LEDs
+through the host for getting and setting colours, and to play sounds. This architecture simplifies the
+application code and also enables a digital twin to run the same application classes in a software 
+simulation of the hardware.
+"""
+class Host:
+    def __init__(self,getColour,setColour,audio):
+        self.getColour = getColour
+        self.setColour = setColour
+        self.audio = audio
+
+        print("Loading sound files into memory")
+        self.sounds_dict = {}
+
+        # Load sound files into sounds dictionary
+        self.sounds_dict['glass_break'] = WaveFile(open("./sounds/GlassBreak.wav", "rb"))
+        # Load sound files with text keys to identify them here (just a few CC licensed sound files are included in source as examples)
+        # self.sounds_dict['sound_key'] = WaveFile(open("./sounds/soundfile.wav", "rb"))
+
+    def getColour(self):
+        return self.getColour
+
+    def setColour(self):
+        return self.setColour
+
+    def restoreColour(self,x,y):
+        self.setColour(x,y,self.getColour(x,y),False)
+
+    def play(self,key):
+        try:
+            self.audio.play(self.sounds_dict[key])
+        except(KeyError):
+            print(f"No sound matching key: {key}")
+
 
 # Track long single button presses to use to over-ride game classes
 lastBtnPressed = [-1,-1]
@@ -95,6 +133,7 @@ leds = [[0,0,0],[0,0,0],[0,0,0],[0,0,0],
         [0,0,0],[0,0,0],[0,0,0],[0,0,0],
         ]
 
+
 def setColour(x,y,colour,store=True):
     if 0 <= x <= 11 and 0 <= y <= 11:
         if store:
@@ -104,8 +143,10 @@ def setColour(x,y,colour,store=True):
     else:
         print(f"Request to set colour outside trellis at: {x},{y}")
 
+
 def getColour(x,y):
     return leds[y * dimY + x]
+
 
 def gridReset(colour):
     """
@@ -114,21 +155,48 @@ def gridReset(colour):
     for y in range(dimY):
         for x in range(dimX):
             setColour( x, y, colour )
-    
+
+
 def longPress(x,y):
     global activeGame
     
     print(f"Button long press at {x},{y}")
-    if y == 11:
+    if y == 0:
+        if x == 6:
+            trellis.brightness = 0.1
+        elif x == 7:
+            trellis.brightness = 0.2
+        elif x == 8:
+            trellis.brightness = 0.4
+        elif x == 9:
+            trellis.brightness = 0.6
+        elif x == 10:
+            trellis.brightness = 0.8
+        elif x == 11:
+            trellis.brightness = 1.0
+        else:
+            # Pass unhandled long press events to active game
+            activeGame.longPressEvent(x,y)
+    elif y == 11:
         if x == 0:
             gridReset((50,0,50))
-            activeGame = BtnDemo(getColour, setColour, audio)
+            activeGame = BtnDemo(host)
         elif x == 1:
             # gridReset((10,10,10))
-            activeGame = Battleships(getColour, setColour)
+            activeGame = Battleships(host)
         elif x == 11:
             gridReset((0,0,0))
-            activeGame = RainDemo(getColour, setColour)
+            activeGame = RainDemo(host)
+        else:
+            # Pass unhandled long press events to active game
+            activeGame.longPressEvent(x,y)
+    else:
+        # Pass unhandled long press events to active game
+        activeGame.longPressEvent(x,y)
+
+    # Restore button colour
+    host.restoreColour(x,y)
+
 
 # this will be called when button events are received
 def btnHandler(x, y, edge):
@@ -166,9 +234,9 @@ for y in range(dimY):
         trellis.set_callback(x, y, btnHandler)
         trellis.color( x, y, (100, 0, 255) )
 
+host = Host(getColour,setColour,audio)
 
-activeGame = BtnDemo(getColour, setColour, audio)
-#gridReset((10, 10, 10))
+activeGame = Battleships(host)
 
 while True:
     # The NeoTrellis can only be read every 17 milliseconds or so
