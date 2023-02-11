@@ -20,7 +20,7 @@ import time
 
 OFF = (0, 0, 0)
 RED = (255, 0, 0)
-ORANGE = (255, 120, 0)
+ORANGE = (255, 100, 0)
 YELLOW = (255, 180, 0)
 GREEN = (0, 255, 0)
 CYAN = (0, 255, 255)
@@ -32,7 +32,9 @@ DIMWHITE = (20,20,20)
 
 MISS = BLUE
 HIT = RED
-NOTTRIED = DIMWHITE
+NOTTRIED = OFF
+BORDER = GREEN
+AMMO = CYAN
 
 TURNTIME = 2200000000
 ANIMATEINTERVAL = 330000000
@@ -78,13 +80,29 @@ class Battleships:
         self.submarine = [[0,0,0],[0,0,0],[0,0,0]]
         self.destroyer = [[0,0,0],[0,0,0]]
 
-        # Draw border
-        for x in range(12):
-            self.host.setColour( x, 0, GREEN )
-            self.host.setColour( x, 11, GREEN )
-        for y in range(12):
-            self.host.setColour( 0, y, GREEN )
-            self.host.setColour( 11, y, GREEN )
+        # Draw border showing amount of ammo
+        counter = 0
+        colour = AMMO
+        for x in range(11):
+            counter += 1
+            if counter > self.maxTries:
+                colour = BORDER
+            self.host.setColour( x, 0, colour )
+        for y in range(11):
+            counter += 1
+            if counter > self.maxTries:
+                colour = BORDER
+            self.host.setColour( 11, y, colour )
+        for x in range(11):
+            counter += 1
+            if counter > self.maxTries:
+                colour = BORDER
+            self.host.setColour( 11-x, 11, colour )
+        for y in range(11):
+            counter += 1
+            if counter > self.maxTries:
+                colour = BORDER
+            self.host.setColour( 0, 11-y, colour )
 
         # Draw playing area
         for y in range(1,11):
@@ -139,15 +157,10 @@ class Battleships:
                 print(f"Audio Volume: {self.audioVolume}")
         elif y == 1:
             if x < 4 and self.misses == 0:
-                # Reset game difficulty if at start of game
+                # Set game difficulty if at start of game
                 self.maxTries = 11 + x * 11
-                for idx in range(self.maxTries):
-                    self.misses = idx + 1
-                    self.updateScore(RED)
-                    time.sleep(0.05)
-                time.sleep(0.5)
-                # Trigger end of game to restart
-                self.endGame()
+                # Start new game to restart and update display
+                self.startGame()
 
 
     def animate(self):
@@ -240,7 +253,7 @@ class Battleships:
         elif self.gamestage == 4:
             # Animate ships to show remaining
             timenow = time.monotonic_ns()
-            if timenow - self.turnStarted > TURNTIME * 2:
+            if timenow - self.turnStarted > TURNTIME * 4:
                 self.startGame()
             elif timenow - self.animatetime > ANIMATEINTERVAL:
                 print("Game over animation")
@@ -269,7 +282,7 @@ class Battleships:
         self.animatetime = self.turnStarted - ANIMATEINTERVAL # Set to time out immediately
 
 
-    def updateScore(self,colour=YELLOW):
+    def updateScore(self,colour=BORDER):
         if self.misses < 12:
             self.host.setColour(self.misses-1, 0, colour)
         elif self.misses < 23:
