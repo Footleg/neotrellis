@@ -45,6 +45,9 @@ BTN_SIZE = 30
 DIM_X = 12
 DIM_Y = 12
 
+RED = (255, 0, 0)
+ORANGE = (255, 100, 0)
+
 # Define the window size based on the constants defined above
 SCR_SIZE = SCR_W, SCR_H = BTN_MARGIN + (BTN_MARGIN + BTN_SIZE) * DIM_X, BTN_MARGIN + (BTN_MARGIN + BTN_SIZE) * DIM_Y
 
@@ -94,6 +97,7 @@ class Host:
     def play(self,key):
         try:
             self.sounds_dict[key].getSound().play()
+            print(f"Playing sound: {key}")
         except(KeyError):
             print(f"No sound matching key: {key}")
 
@@ -103,9 +107,12 @@ lastBtnPressed = [-1,-1]
 lastPressTime = 0
 longPressInterval = 1000000000
 
+# Track time since last hardware sync, so we give at a least 17ms pause between sync requests
+lastSyncTime = 0
+
 ## Main simulator method
 def main():
-    global activeGame
+    global activeGame, lastSyncTime
 
     pygame.init()
     screen = pygame.display.set_mode(SCR_SIZE)    
@@ -180,7 +187,7 @@ def main():
     def longPress(x,y):
         global activeGame
         
-        print(f"Button long press at {x},{y}")
+        print(f"Button long press at {x},{y} (was colour: {getColour(x,y)})")
         if y == 11:
             if x == 0:
                 gridReset((50,0,50))
@@ -231,31 +238,39 @@ def main():
 
     ## Simulation loop ##
     while running:
-        # Process pygame events
-        for event in pygame.event.get():
-            if event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:
-                    xPos = int((pygame.mouse.get_pos()[0] - BTN_MARGIN) / (BTN_SIZE + BTN_MARGIN))
-                    yPos = int((pygame.mouse.get_pos()[1] - BTN_MARGIN) / (BTN_SIZE + BTN_MARGIN))
-                    btnHandler( xPos, yPos, event.type == pygame.MOUSEBUTTONDOWN )
-            elif event.type == pygame.QUIT:
+        timenow = time.monotonic_ns()
+        if timenow - lastSyncTime > 18000:
+            lastSyncTime = timenow
+            # Mock of Trellis sync: Process pygame events
+            for event in pygame.event.get():
+                if event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        xPos = int((pygame.mouse.get_pos()[0] - BTN_MARGIN) / (BTN_SIZE + BTN_MARGIN))
+                        yPos = int((pygame.mouse.get_pos()[1] - BTN_MARGIN) / (BTN_SIZE + BTN_MARGIN))
+                        btnHandler( xPos, yPos, event.type == pygame.MOUSEBUTTONDOWN )
+                elif event.type == pygame.QUIT:
+                    exit_game()
+
+            # Check for key presses (ESC to exit simulator)
+            pressed_keys = pygame.key.get_pressed()
+            if pressed_keys[pygame.K_ESCAPE]:
                 exit_game()
 
-        # Check for key presses (ESC to exit simulator)
-        pressed_keys = pygame.key.get_pressed()
-        if pressed_keys[pygame.K_ESCAPE]:
-            exit_game()
+            activeGame.animate()
 
-        activeGame.animate()
+            if (lastBtnPressed[0] >= 0) and ((time.monotonic_ns() - lastPressTime) > longPressInterval):
+                #Long press will be activated when key is lifted, so indicate with colour change
+                longPressColour = RED
+                #Use a different colour to the one this button is currently showing
+                colourNow = getColour(lastBtnPressed[0], lastBtnPressed[1])
+                if colourNow == RED:
+                    longPressColour = ORANGE
+                #print(f"Long press activated for position {lastBtnPressed[0]},{lastBtnPressed[1]}")
+                setColour(lastBtnPressed[0], lastBtnPressed[1], longPressColour, False )
+                
+            pygame.display.update()
 
-        if (lastBtnPressed[0] >= 0) and ((time.monotonic_ns() - lastPressTime) > longPressInterval):
-            #Long press will be activated when key is lifted, so indicate with colour change
-            #print(f"Long press activated for position {lastBtnPressed[0]},{lastBtnPressed[1]}")
-            setColour(lastBtnPressed[0], lastBtnPressed[1], (255, 80, 0), False )
-            
-        pygame.display.update()
-        time.sleep(0.02)
-
+        time.sleep(0.002)
         
     main()
 

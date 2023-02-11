@@ -29,6 +29,9 @@ from btn_demo import BtnDemo
 from rain_demo import RainDemo
 from TrellisBattleships import Battleships
 
+RED = (255, 0, 0)
+ORANGE = (255, 100, 0)
+
 bootBtn = DigitalInOut(microcontroller.pin.GPIO23)
 bootBtn.direction = Direction.INPUT
 
@@ -90,6 +93,9 @@ class Host:
 lastBtnPressed = [-1,-1]
 lastPressTime = 0
 longPressInterval = 1000000000
+
+# Track time since last hardware sync, so we give at a least 17ms pause between sync requests
+lastSyncTime = 0
 
 # Set the brightness value (0 to 1.0)
 trellis.brightness = 0.1
@@ -160,7 +166,7 @@ def gridReset(colour):
 def longPress(x,y):
     global activeGame
     
-    print(f"Button long press at {x},{y}")
+    print(f"Button long press at {x},{y} (was colour: {getColour(x,y)})")
     if y == 0:
         if x == 6:
             trellis.brightness = 0.1
@@ -239,17 +245,24 @@ host = Host(getColour,setColour,audio)
 activeGame = Battleships(host)
 
 while True:
-    # The NeoTrellis can only be read every 17 milliseconds or so
-    trellis.sync()
-    activeGame.animate()
+    timenow = time.monotonic_ns()
+    if timenow - lastSyncTime > 18000:
+        lastSyncTime = timenow
+        # The NeoTrellis can only be read every 17 milliseconds or so
+        trellis.sync()
+        activeGame.animate()
 
-    if (lastBtnPressed[0] >= 0) and ((time.monotonic_ns() - lastPressTime) > longPressInterval):
-        #Long press will be activated when key is lifted, so indicate with colour change
-        #print(f"Long press activated for position {lastBtnPressed[0]},{lastBtnPressed[1]}")
-        setColour(lastBtnPressed[0], lastBtnPressed[1], (255, 80, 0), False )
+        if (lastBtnPressed[0] >= 0) and ((time.monotonic_ns() - lastPressTime) > longPressInterval):
+            #Long press will be activated when key is lifted, so indicate with colour change
+            longPressColour = RED
+            #Use a different colour to the one this button is currently showing
+            colourNow = getColour(lastBtnPressed[0], lastBtnPressed[1])
+            if colourNow == RED:
+                longPressColour = ORANGE
+            #print(f"Long press activated for position {lastBtnPressed[0]},{lastBtnPressed[1]}")
+            setColour(lastBtnPressed[0], lastBtnPressed[1], longPressColour, False )
 
-    if bootBtn.value == False:
-        print("Boot button pressed.")
+        if bootBtn.value == False:
+            print("Boot button pressed.")
         
-    time.sleep(0.02)
-
+    time.sleep(0.002)
